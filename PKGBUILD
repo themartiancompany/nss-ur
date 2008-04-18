@@ -1,4 +1,3 @@
-# $Id: PKGBUILD,v 1.13 2008/03/12 21:53:40 jgc Exp $
 # Maintainer: Alexander Baldeck <alexander@archlinux.org>
 # Contributor: Jan de Groot <jgc@archlinux.org>
 pkgname=nss
