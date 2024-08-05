@@ -12,11 +12,11 @@ _os="$( \
 _arch="$( \
   uname \
     -m)"
-_pkg="nss"
+_pkg=nss
 pkgbase="${_pkg}"
 pkgname=(
   "${_pkg}"
-  ca-certificates-mozilla
+  "ca-certificates-mozilla"
 )
 pkgver=3.103
 pkgrel=1
@@ -68,6 +68,14 @@ b2sums=(
   '4be5dd836c844fdd7b63302a6994d62149082c3bc81eef70f373f416fed80a61a923960e4390d1c391b81ab01b409370d788818a30ffdd3a4ed467b670f990f6'
   '6bb59dcc9289916dcbf8fb6d73db0c0cd7582dc12a3aa4e8be19ec62c9ede65fdd9470a2d92ec5a114506b78d2d21b8ae0a1b45a17dc1f90f7d75434a93da510'
 )
+if [[ "${_os}" == "Android" ]]; then
+  source+=(
+    '0001-lib-freebl-stubs.c.patch'
+  )
+  b2sums+=(
+    'cca769395a6969d4d67119138cdb08424510485ef91bae15f88e48502f9622fa863d63f60b46bafb747b40be4866b296d28928cfc616e6562e8dab6e7dd81255'
+  )
+fi
 
 prepare() {
   mkdir \
@@ -77,12 +85,39 @@ prepare() {
     -srft \
     certs \
     "${_pkg}/lib/ckfw/builtins/"{certdata.txt,"${_pkg}ckbi.h"}
+  patch \
+    -Np1 \
+    -i \
+    '0001-lib-freebl-stubs.c.patch'
+}
+
+_get_usr() {
+  local \
+    _cc \
+    _bin \
+    _usr
+  _cc="$( \
+    command \
+      -v \
+      "cc")"
+  _bin="$( \
+    dirname \
+      "${_cc}")"
+  _usr="$( \
+    dirname \
+      "${_bin}")"
+  echo \
+    "${_usr}"
 }
 
 build() {
   local \
-    buildsh_options=()
-  buildsh_options=(
+    _buildsh_options=() \
+    _cppflags=() \
+    _cflags=() \
+    _ldflags=() \
+    _cxxflags=()
+  _buildsh_options=(
     --disable-tests
     --enable-libpkix
     --opt
@@ -90,8 +125,32 @@ build() {
     --system-sqlite
   )
   if [[ "${_arch}" == "x86_64" ]]; then
-    buildsh_options+=(
+    _buildsh_options+=(
       --target x64
+    )
+  elif [[ "${_arch}" == "aarch64" ]]; then
+    _buildsh_options+=(
+      USE_64=1
+    )
+  fi
+  if [[ "${_os}" == "Android" ]]; then
+    _cppflags+=(
+      -DANDROID
+    )
+    _cflags+=(
+      "${CFLAGS}"
+      -I"$(_get_usr)/include/nspr"
+      -Wno-unused-const-variable # mm
+      -Wno-tautological-unsigned-char-zero-compare # wow
+      -Wno-int-conversion
+    )
+    _cxxflags+=(
+      "${CXXFLAGS}"
+      -I"$(_get_usr)/include/nspr"
+    )
+    _ldflags+=(
+      "${LDFLAGS}"
+      -llog
     )
   fi
   cd \
@@ -102,8 +161,12 @@ build() {
   ./bundle.sh
   cd \
     "${_pkg}"
+  CPPFLAGS="${_cppflags[*]}" \
+  CFLAGS="${_cflags[*]}" \
+  CXXFLAGS="${_cxxflags[*]}" \
+  LDFLAGS="${_ldflags[*]}" \
   ./build.sh \
-    "${buildsh_options[@]}"
+    "${_buildsh_options[@]}"
 }
 
 package_nss() {
@@ -143,8 +206,9 @@ package_nss() {
     "${pkgdir}${libdir}/pkgconfig/mozilla-${_pkg}.pc"
   install \
     -Dt \
-    "${pkgdir}${libdir}" \
-    dist/Release/lib/*.so
+    "${pkgdir}${libdir}/" \
+    dist/Release/lib/*.so || \
+
   { read vmajor; read vminor; read vpatch; } < \
     <(awk \
         '/#define.*NSS_V(MAJOR|MINOR|PATCH)/ {print $3}' \
